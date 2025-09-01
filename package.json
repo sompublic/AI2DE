@@ -45,11 +45,11 @@
     "webpack-dev-server": "^4.15.1"
   },
   "dependencies": {
-    "@monaco-editor/react": "^4.6.0",
+    
     "@types/uuid": "^9.0.7",
     "axios": "^1.6.2",
     "electron-store": "^8.1.0",
-    "monaco-editor": "^0.45.0",
+    
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
     "react-router-dom": "^6.20.1",

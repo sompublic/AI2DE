@@ -1,4 +1,4 @@
-import { AIModel, CompletionRequest, ChatRequest, InlineCompletionRequest, EmbeddingRequest, EmbeddingResponse } from '../../../shared/types/ai';
+import { AIModel, CompletionRequest, ChatRequest, InlineCompletionRequest } from '../../../shared/types/ai';
 import axios from 'axios';
 
 export class CodeLlamaModel extends AIModel {
@@ -7,38 +7,26 @@ export class CodeLlamaModel extends AIModel {
   async initialize(): Promise<void> {
     try {
       // Check if Ollama is running and Code Llama is available
-      const response = await axios.get(`${this.config.endpoint.replace('/api/generate', '/api/tags')}`);
+      const response = await axios.get(`${this.config.endpoint.replace('/api/generate', '/api/tags')}`, {
+        timeout: 5000 // 5 second timeout
+      });
       const availableModels = response.data.models || [];
       
+      // Look for any codellama model
       const codeLlamaModel = availableModels.find((model: any) => 
-        model.name.includes('codellama') && model.name.includes('70b')
+        model.name.includes('codellama')
       );
 
       if (!codeLlamaModel) {
-        console.log('Code Llama 70B not found, attempting to pull...');
-        await this.pullModel();
+        console.log('No Code Llama models found');
+        throw new Error('No Code Llama models available');
       }
 
       this.isInitialized = true;
-      console.log('Code Llama 70B initialized successfully');
+      console.log(`✅ Code Llama initialized: ${codeLlamaModel.name}`);
     } catch (error) {
-      console.error('Failed to initialize Code Llama 70B:', error);
-      throw new Error('Code Llama 70B initialization failed. Please ensure Ollama is running.');
-    }
-  }
-
-  private async pullModel(): Promise<void> {
-    try {
-      const pullResponse = await axios.post(`${this.config.endpoint.replace('/api/generate', '/api/pull')}`, {
-        name: 'codellama:70b-code'
-      });
-      
-      if (pullResponse.status === 200) {
-        console.log('Code Llama 70B model pulled successfully');
-      }
-    } catch (error) {
-      console.error('Failed to pull Code Llama 70B:', error);
-      throw error;
+      console.error('Failed to initialize Code Llama:', error.message);
+      throw new Error('Code Llama initialization failed. Please ensure Ollama is running.');
     }
   }
 
@@ -51,17 +39,21 @@ export class CodeLlamaModel extends AIModel {
       const prompt = this.buildCompletionPrompt(request);
       
       const response = await axios.post(this.config.endpoint, {
-        model: 'codellama:70b-code',
+        model: this.getModelName('code'),
         prompt,
-        max_tokens: request.maxTokens,
-        temperature: request.temperature,
-        stop: request.stopSequences || [],
+        options: {
+          num_predict: request.maxTokens,
+          temperature: request.temperature,
+          stop: request.stopSequences || []
+        },
         stream: false
+      }, {
+        timeout: 30000 // 30 second timeout
       });
 
       return response.data.response || '';
     } catch (error) {
-      console.error('Code Llama completion failed:', error);
+      console.error('Code Llama completion failed:', error.message);
       throw new Error('Failed to get completion from Code Llama');
     }
   }
@@ -75,16 +67,20 @@ export class CodeLlamaModel extends AIModel {
       const prompt = this.buildChatPrompt(request);
       
       const response = await axios.post(this.config.endpoint, {
-        model: 'codellama:70b-instruct',
+        model: this.getModelName('instruct'),
         prompt,
-        max_tokens: request.maxTokens,
-        temperature: request.temperature,
+        options: {
+          num_predict: request.maxTokens,
+          temperature: request.temperature
+        },
         stream: false
+      }, {
+        timeout: 60000 // 60 second timeout for chat
       });
 
       return response.data.response || '';
     } catch (error) {
-      console.error('Code Llama chat failed:', error);
+      console.error('Code Llama chat failed:', error.message);
       throw new Error('Failed to get chat response from Code Llama');
     }
   }
@@ -98,18 +94,31 @@ export class CodeLlamaModel extends AIModel {
       const prompt = this.buildInlineCompletionPrompt(request);
       
       const response = await axios.post(this.config.endpoint, {
-        model: 'codellama:70b-code',
+        model: this.getModelName('code'),
         prompt,
-        max_tokens: request.maxTokens,
-        temperature: request.temperature,
-        stop: ['\n\n', '```', '</code>'],
+        options: {
+          num_predict: request.maxTokens,
+          temperature: request.temperature,
+          stop: ['\n\n', '```', '</code>']
+        },
         stream: false
+      }, {
+        timeout: 15000 // 15 second timeout for inline completions
       });
 
       return this.cleanInlineCompletion(response.data.response || '');
     } catch (error) {
-      console.error('Code Llama inline completion failed:', error);
-      throw new Error('Failed to get inline completion from Code Llama');
+      console.error('Code Llama inline completion failed:', error.message);
+      return ''; // Return empty string instead of throwing for inline completions
+    }
+  }
+
+  private getModelName(type: 'code' | 'instruct'): string {
+    // Use 7B model for faster responses, fallback to 70B if needed
+    if (this.config.id.includes('7b')) {
+      return type === 'code' ? 'codellama:7b-code' : 'codellama:7b-instruct';
+    } else {
+      return type === 'code' ? 'codellama:70b-code' : 'codellama:70b-instruct';
     }
   }
 
@@ -130,9 +139,6 @@ export class CodeLlamaModel extends AIModel {
     // Add Salesforce-specific context for Apex/LWC
     if (context.language === 'apex' || context.language === 'lwc') {
       fullPrompt += `Context: Salesforce development\n`;
-      if (context.sobjects) {
-        fullPrompt += `Available SObjects: ${context.sobjects.join(', ')}\n`;
-      }
     }
 
     fullPrompt += `\nCode completion request:\n${prompt}`;
@@ -143,8 +149,9 @@ export class CodeLlamaModel extends AIModel {
   private buildChatPrompt(request: ChatRequest): string {
     let prompt = 'You are an expert software developer specializing in Salesforce development (Apex, LWC, SOQL), JavaScript, Python, and Java. Provide helpful, accurate, and concise responses.\n\n';
 
-    // Add conversation history
-    for (const msg of request.history) {
+    // Add conversation history (limit to last 3 exchanges for performance)
+    const recentHistory = request.history.slice(-6); // Last 3 exchanges (6 messages)
+    for (const msg of recentHistory) {
       prompt += `${msg.role === 'user' ? 'Human' : 'Assistant'}: ${msg.content}\n`;
     }
 
@@ -159,51 +166,38 @@ export class CodeLlamaModel extends AIModel {
     const lines = code.split('\n');
     const currentLine = lines[position.line] || '';
     const beforeCursor = currentLine.substring(0, position.column);
-    const afterCursor = currentLine.substring(position.column);
 
+    // Keep context small for fast inline completions
     let prompt = `Complete the following ${language} code:\n\n`;
     
-    // Add context lines before
-    const contextBefore = lines.slice(Math.max(0, position.line - 10), position.line);
+    // Add minimal context (only 3 lines before)
+    const contextBefore = lines.slice(Math.max(0, position.line - 3), position.line);
     if (contextBefore.length > 0) {
       prompt += contextBefore.join('\n') + '\n';
     }
 
     // Add the line with cursor position
     prompt += beforeCursor + '<CURSOR>';
-    
-    if (afterCursor.trim()) {
-      prompt += afterCursor;
-    }
 
-    // Add context lines after
-    const contextAfter = lines.slice(position.line + 1, Math.min(lines.length, position.line + 6));
-    if (contextAfter.length > 0) {
-      prompt += '\n' + contextAfter.join('\n');
-    }
-
-    prompt += '\n\nComplete the code at <CURSOR> position:';
+    prompt += '\n\nComplete the code at <CURSOR> position (one line only):';
     
     return prompt;
   }
 
   private cleanInlineCompletion(completion: string): string {
-    // Remove common artifacts from the completion
+    // Clean and limit the completion
     let cleaned = completion.trim();
     
-    // Remove explanation text that might come after the code
-    const codeEndMarkers = ['\n\n', 'Explanation:', 'This code', 'The above'];
-    for (const marker of codeEndMarkers) {
-      const index = cleaned.indexOf(marker);
-      if (index !== -1) {
-        cleaned = cleaned.substring(0, index);
-      }
-    }
-
-    // Remove any markdown formatting
-    cleaned = cleaned.replace(/```[\w]*\n?/g, '');
+    // Take only the first line for inline completions
+    const firstLine = cleaned.split('\n')[0];
     
-    return cleaned.trim();
+    // Remove common artifacts
+    cleaned = firstLine
+      .replace(/```[\w]*\n?/g, '')
+      .replace(/^(Here's|This is|The code).*:/i, '')
+      .trim();
+    
+    return cleaned;
   }
 
   isAvailable(): boolean {

@@ -14,9 +14,23 @@ contextBridge.exposeInMainWorld('electronAPI', {
   chat: (message: string, context: any) => ipcRenderer.invoke('ai:chat', message, context),
   getInlineCompletion: (code: string, position: any) => ipcRenderer.invoke('ai:inline-completion', code, position),
 
+  // Model management
+  getModels: () => ipcRenderer.invoke('ai:get-models'),
+  getCurrentModel: () => ipcRenderer.invoke('ai:get-current-model'),
+  switchModel: (modelId: string) => ipcRenderer.invoke('ai:switch-model', modelId),
+
+  // Settings operations
+  getSettings: () => ipcRenderer.invoke('settings:get'),
+  updateApiKey: (provider: string, apiKey: string) => ipcRenderer.invoke('settings:update-api-key', provider, apiKey),
+  testApiKey: (provider: string, apiKey: string) => ipcRenderer.invoke('settings:test-api-key', provider, apiKey),
+
   // Indexing operations
   indexFile: (filePath: string, content: string) => ipcRenderer.invoke('index:file', filePath, content),
   searchIndex: (query: string) => ipcRenderer.invoke('index:search', query),
+
+  // Debug operations
+  getDebugTransactions: () => ipcRenderer.invoke('debug:get-transactions'),
+  clearDebugTransactions: () => ipcRenderer.invoke('debug:clear-transactions'),
 
   // Menu event listeners
   onMenuAction: (callback: (action: string, data?: any) => void) => {
@@ -45,8 +59,16 @@ declare global {
       getCompletion: (prompt: string, context: any) => Promise<string>;
       chat: (message: string, context: any) => Promise<string>;
       getInlineCompletion: (code: string, position: any) => Promise<string>;
+      getModels: () => Promise<any[]>;
+      getCurrentModel: () => Promise<string | null>;
+      switchModel: (modelId: string) => Promise<boolean>;
+      getSettings: () => Promise<any>;
+      updateApiKey: (provider: string, apiKey: string) => Promise<void>;
+      testApiKey: (provider: string, apiKey: string) => Promise<boolean>;
       indexFile: (filePath: string, content: string) => Promise<void>;
       searchIndex: (query: string) => Promise<any[]>;
+      getDebugTransactions: () => Promise<any[]>;
+      clearDebugTransactions: () => Promise<void>;
       onMenuAction: (callback: (action: string, data?: any) => void) => void;
       removeAllListeners: (channel: string) => void;
     };

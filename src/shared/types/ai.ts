@@ -131,3 +131,21 @@ export interface ModelPerformanceMetrics {
   errorRate: number;
   lastUpdated: number;
 }
+
+export interface AITransaction {
+  id: string;
+  type: 'request' | 'response' | 'error' | 'info';
+  model: string;
+  operation: 'chat' | 'completion' | 'inline-completion' | 'embedding' | 'initialization';
+  prompt?: string;
+  response?: string;
+  metadata: {
+    maxTokens?: number;
+    temperature?: number;
+    contextLength?: number;
+    tokens?: number;
+    latency?: number;
+    [key: string]: any;
+  };
+  timestamp: number;
+}

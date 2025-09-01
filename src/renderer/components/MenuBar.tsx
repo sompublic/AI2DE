@@ -8,6 +8,7 @@ const MenuContainer = styled.div`
   border-bottom: 1px solid #3e3e42;
   padding: 8px 16px;
   gap: 16px;
+  height: 48px;
 `;
 
 const MenuButton = styled.button`
@@ -43,18 +44,51 @@ const StatusIndicator = styled.div<{ isActive: boolean }>`
   }
 `;
 
+const QuickActions = styled.div`
+  display: flex;
+  gap: 8px;
+  margin-left: auto;
+`;
+
+const DebugToggle = styled.button<{ isActive: boolean }>`
+  background: ${props => props.isActive ? '#0e639c' : 'none'};
+  border: 1px solid ${props => props.isActive ? '#1177bb' : '#3e3e42'};
+  color: ${props => props.isActive ? '#ffffff' : '#cccccc'};
+  cursor: pointer;
+  padding: 4px 8px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 600;
+  
+  &:hover {
+    background-color: ${props => props.isActive ? '#1177bb' : '#3e3e42'};
+  }
+`;
+
 interface MenuBarProps {
   onToggleSidebar: () => void;
   onToggleChat: () => void;
   sidebarOpen: boolean;
   chatOpen: boolean;
+  onNewFile: () => void;
+  onOpenFile: () => void;
+  onSave: () => void;
+  onOpenSettings: () => void;
+  onToggleDebug: () => void;
+  debugPanelOpen: boolean;
 }
 
 export const MenuBar: React.FC<MenuBarProps> = ({
   onToggleSidebar,
   onToggleChat,
   sidebarOpen,
-  chatOpen
+  chatOpen,
+  onNewFile,
+  onOpenFile,
+  onSave,
+  onOpenSettings,
+  onToggleDebug,
+  debugPanelOpen
 }) => {
   return (
     <MenuContainer>
@@ -64,19 +98,51 @@ export const MenuBar: React.FC<MenuBarProps> = ({
       
       <MenuSeparator />
       
-      <MenuButton onClick={onToggleChat}>
-        💬 AI Chat
+      <MenuButton onClick={onNewFile}>
+        📄 New File
+      </MenuButton>
+      
+      <MenuButton onClick={onOpenFile}>
+        📁 Open File
+      </MenuButton>
+      
+      <MenuButton onClick={onSave}>
+        💾 Save
       </MenuButton>
       
       <MenuSeparator />
       
-      <StatusIndicator isActive={true}>
-        Code Llama 70B
-      </StatusIndicator>
+      <MenuButton onClick={onToggleChat}>
+        💬 AI Chat
+      </MenuButton>
       
-      <StatusIndicator isActive={false}>
-        Indexer Ready
-      </StatusIndicator>
+      <MenuButton onClick={onOpenSettings}>
+        ⚙️ AI Settings
+      </MenuButton>
+      
+      <MenuSeparator />
+      
+      <DebugToggle 
+        isActive={debugPanelOpen}
+        onClick={onToggleDebug}
+        title="AI Debug Console (Cmd+` or Cmd+Shift+D)"
+      >
+        🔍 DEBUG
+      </DebugToggle>
+      
+      <QuickActions>
+        <StatusIndicator isActive={true}>
+          Code Llama 7B
+        </StatusIndicator>
+        
+        <StatusIndicator isActive={true}>
+          AI Ready
+        </StatusIndicator>
+        
+        <StatusIndicator isActive={false}>
+          Indexer Ready
+        </StatusIndicator>
+      </QuickActions>
     </MenuContainer>
   );
 };

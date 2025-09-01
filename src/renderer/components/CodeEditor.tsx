@@ -1,6 +1,5 @@
 import React, { useRef, useEffect, useState } from 'react';
 import styled from 'styled-components';
-import Editor, { Monaco } from '@monaco-editor/react';
 import { OpenFile } from '../App';
 
 const EditorContainer = styled.div`
@@ -66,6 +65,80 @@ const EditorWrapper = styled.div`
   position: relative;
 `;
 
+const TextEditor = styled.textarea`
+  width: 100%;
+  height: 100%;
+  background-color: #1e1e1e;
+  color: #d4d4d4;
+  border: none;
+  outline: none;
+  font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+  font-size: 14px;
+  line-height: 1.5;
+  padding: 16px;
+  resize: none;
+  tab-size: 2;
+  
+  &::selection {
+    background-color: #264f78;
+  }
+  
+  &:focus {
+    background-color: #1e1e1e;
+  }
+`;
+
+const LineNumbers = styled.div`
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 50px;
+  background-color: #252526;
+  border-right: 1px solid #3e3e42;
+  padding: 16px 8px;
+  font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+  font-size: 14px;
+  line-height: 1.5;
+  color: #858585;
+  user-select: none;
+  overflow: hidden;
+  pointer-events: none;
+`;
+
+const EditorWithLineNumbers = styled.div`
+  position: relative;
+  height: 100%;
+  
+  ${TextEditor} {
+    padding-left: 66px;
+  }
+`;
+
+const EmptyState = styled.div`
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  height: 100%;
+  color: #6f6f6f;
+  font-size: 16px;
+  text-align: center;
+  gap: 16px;
+`;
+
+const LanguageIndicator = styled.div`
+  position: absolute;
+  bottom: 16px;
+  right: 16px;
+  background-color: #2d2d30;
+  color: #cccccc;
+  padding: 4px 8px;
+  border-radius: 4px;
+  font-size: 12px;
+  border: 1px solid #3e3e42;
+`;
+
 interface CodeEditorProps {
   files: OpenFile[];
   activeFile: string | null;
@@ -89,155 +162,75 @@ export const CodeEditor: React.FC<CodeEditorProps> = ({
   onCursorPositionChange,
   onInlineCompletionRequest
 }) => {
-  const editorRef = useRef<any>(null);
-  const monacoRef = useRef<Monaco | null>(null);
-  const [completionTimeout, setCompletionTimeout] = useState<NodeJS.Timeout | null>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const [cursorPosition, setCursorPosition] = useState({ line: 1, column: 1 });
 
   const activeFileData = activeFile ? files.find(f => f.path === activeFile) : null;
 
-  useEffect(() => {
-    // Configure Monaco editor when it's ready
-    if (monacoRef.current && editorRef.current) {
-      configureMonaco();
+  const handleTextChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    if (activeFile) {
+      onContentChange(activeFile, e.target.value);
+      updateCursorPosition();
     }
-  }, [monacoRef.current, editorRef.current]);
-
-  const configureMonaco = () => {
-    if (!monacoRef.current) return;
-
-    const monaco = monacoRef.current;
-
-    // Configure Apex language support
-    monaco.languages.register({ id: 'apex' });
-    monaco.languages.setMonarchTokensProvider('apex', {
-      tokenizer: {
-        root: [
-          [/\b(public|private|protected|global|static|final|abstract|virtual|override)\b/, 'keyword'],
-          [/\b(class|interface|enum|extends|implements|trigger)\b/, 'keyword'],
-          [/\b(if|else|for|while|do|switch|case|default|break|continue|return)\b/, 'keyword'],
-          [/\b(try|catch|finally|throw|throws)\b/, 'keyword'],
-          [/\b(new|this|super|null|true|false)\b/, 'keyword'],
-          [/\b(String|Integer|Boolean|Decimal|Date|DateTime|List|Set|Map|SObject)\b/, 'type'],
-          [/\b(System|Database|Schema|Test|ApexPages|UserInfo)\b/, 'type'],
-          [/\/\/.*$/, 'comment'],
-          [/\/\*[\s\S]*?\*\//, 'comment'],
-          [/"([^"\\]|\\.)*$/, 'string.invalid'],
-          [/"/, 'string', '@string'],
-          [/'([^'\\]|\\.)*$/, 'string.invalid'],
-          [/'/, 'string', '@string_single'],
-          [/\d*\.\d+([eE][\-+]?\d+)?/, 'number.float'],
-          [/\d+/, 'number'],
-        ],
-        string: [
-          [/[^\\"]+/, 'string'],
-          [/\\./, 'string.escape.invalid'],
-          [/"/, 'string', '@pop']
-        ],
-        string_single: [
-          [/[^\\']+/, 'string'],
-          [/\\./, 'string.escape.invalid'],
-          [/'/, 'string', '@pop']
-        ]
-      }
-    });
-
-    // Configure SOQL language support
-    monaco.languages.register({ id: 'soql' });
-    monaco.languages.setMonarchTokensProvider('soql', {
-      tokenizer: {
-        root: [
-          [/\b(SELECT|FROM|WHERE|ORDER BY|GROUP BY|HAVING|LIMIT|OFFSET)\b/i, 'keyword'],
-          [/\b(AND|OR|NOT|IN|LIKE|NULL|ASC|DESC)\b/i, 'keyword'],
-          [/\b(COUNT|SUM|AVG|MIN|MAX|FIRST|LAST)\b/i, 'keyword'],
-          [/\b(TODAY|YESTERDAY|TOMORROW|THIS_WEEK|LAST_WEEK|NEXT_WEEK)\b/i, 'keyword'],
-          [/'([^'\\]|\\.)*'/, 'string'],
-          [/\d+/, 'number'],
-          [/[a-zA-Z_][a-zA-Z0-9_]*__c/, 'type'], // Custom fields
-          [/[a-zA-Z_][a-zA-Z0-9_]*/, 'identifier'],
-        ]
-      }
-    });
-
-    // Set up themes
-    monaco.editor.defineTheme('ai-ide-dark', {
-      base: 'vs-dark',
-      inherit: true,
-      rules: [
-        { token: 'comment', foreground: '6A9955' },
-        { token: 'keyword', foreground: '569CD6' },
-        { token: 'string', foreground: 'CE9178' },
-        { token: 'number', foreground: 'B5CEA8' },
-        { token: 'type', foreground: '4EC9B0' },
-      ],
-      colors: {
-        'editor.background': '#1e1e1e',
-        'editor.foreground': '#d4d4d4',
-        'editor.lineHighlightBackground': '#2d2d30',
-        'editor.selectionBackground': '#264f78',
-        'editorCursor.foreground': '#ffffff',
-      }
-    });
-
-    monaco.editor.setTheme('ai-ide-dark');
   };
 
-  const handleEditorDidMount = (editor: any, monaco: Monaco) => {
-    editorRef.current = editor;
-    monacoRef.current = monaco;
-    configureMonaco();
-
-    // Set up event listeners
-    editor.onDidChangeCursorPosition((e: any) => {
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    // Handle Tab key
+    if (e.key === 'Tab') {
+      e.preventDefault();
+      const target = e.target as HTMLTextAreaElement;
+      const start = target.selectionStart;
+      const end = target.selectionEnd;
+      const value = target.value;
+      
       if (activeFile) {
-        const position = {
-          line: e.position.lineNumber,
-          column: e.position.column
-        };
-        onCursorPositionChange(activeFile, position);
+        const newValue = value.substring(0, start) + '  ' + value.substring(end);
+        onContentChange(activeFile, newValue);
+        
+        // Set cursor position after the inserted spaces
+        setTimeout(() => {
+          target.selectionStart = target.selectionEnd = start + 2;
+        }, 0);
       }
-    });
-
-    // Set up inline completion trigger
-    editor.onDidChangeModelContent((e: any) => {
-      if (activeFile && activeFileData) {
-        // Clear existing timeout
-        if (completionTimeout) {
-          clearTimeout(completionTimeout);
-        }
-
-        // Set new timeout for inline completion
-        const timeout = setTimeout(() => {
-          const position = editor.getPosition();
-          if (position) {
-            const model = editor.getModel();
-            const code = model.getValue();
-            
-            onInlineCompletionRequest(code, {
-              line: position.lineNumber,
-              column: position.column
-            }, activeFileData.language);
-          }
-        }, 500); // 500ms delay
-
-        setCompletionTimeout(timeout);
-      }
-    });
-
-    // Set up keyboard shortcuts
-    editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS, () => {
-      // Save is handled by menu
-    });
-
-    editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyMod.Shift | monaco.KeyCode.KeyC, () => {
-      // Toggle chat is handled by menu
-    });
-  };
-
-  const handleEditorChange = (value: string | undefined) => {
-    if (activeFile && value !== undefined) {
-      onContentChange(activeFile, value);
+    }
+    
+    // Handle Cmd+S for save
+    if ((e.metaKey || e.ctrlKey) && e.key === 's') {
+      e.preventDefault();
+      // Save will be handled by the menu
     }
   };
+
+  const updateCursorPosition = () => {
+    if (textareaRef.current && activeFile) {
+      const textarea = textareaRef.current;
+      const text = textarea.value;
+      const cursorPos = textarea.selectionStart;
+      
+      const lines = text.substring(0, cursorPos).split('\n');
+      const line = lines.length;
+      const column = lines[lines.length - 1].length + 1;
+      
+      setCursorPosition({ line, column });
+      onCursorPositionChange(activeFile, { line, column });
+    }
+  };
+
+  const generateLineNumbers = (content: string) => {
+    const lines = content.split('\n');
+    return lines.map((_, index) => index + 1).join('\n');
+  };
+
+  useEffect(() => {
+    updateCursorPosition();
+  }, [activeFile, activeFileData?.content]);
+
+  useEffect(() => {
+    // Focus the editor when a file is opened
+    if (activeFileData && textareaRef.current) {
+      textareaRef.current.focus();
+    }
+  }, [activeFileData]);
 
   return (
     <EditorContainer>
@@ -264,44 +257,35 @@ export const CodeEditor: React.FC<CodeEditorProps> = ({
 
       <EditorWrapper>
         {activeFileData ? (
-          <Editor
-            height="100%"
-            language={activeFileData.language}
-            value={activeFileData.content}
-            onChange={handleEditorChange}
-            onMount={handleEditorDidMount}
-            options={{
-              theme: 'ai-ide-dark',
-              fontSize: 14,
-              lineNumbers: 'on',
-              minimap: { enabled: true },
-              automaticLayout: true,
-              scrollBeyondLastLine: false,
-              wordWrap: 'on',
-              tabSize: 2,
-              insertSpaces: true,
-              formatOnPaste: true,
-              formatOnType: true,
-              suggestOnTriggerCharacters: true,
-              acceptSuggestionOnEnter: 'on',
-              quickSuggestions: {
-                other: true,
-                comments: false,
-                strings: false
-              }
-            }}
-          />
+          <EditorWithLineNumbers>
+            <LineNumbers>
+              {generateLineNumbers(activeFileData.content)}
+            </LineNumbers>
+            <TextEditor
+              ref={textareaRef}
+              value={activeFileData.content}
+              onChange={handleTextChange}
+              onKeyDown={handleKeyDown}
+              onSelect={updateCursorPosition}
+              onKeyUp={updateCursorPosition}
+              onMouseUp={updateCursorPosition}
+              placeholder="Start typing your code here..."
+              spellCheck={false}
+            />
+            <LanguageIndicator>
+              {activeFileData.language.toUpperCase()} • Ln {cursorPosition.line}, Col {cursorPosition.column}
+            </LanguageIndicator>
+          </EditorWithLineNumbers>
         ) : (
-          <div style={{
-            display: 'flex',
-            justifyContent: 'center',
-            alignItems: 'center',
-            height: '100%',
-            color: '#6f6f6f',
-            fontSize: '16px'
-          }}>
-            Open a file to start coding
-          </div>
+          <EmptyState>
+            <div>📝 Welcome to AI IDE!</div>
+            <div style={{ fontSize: '14px', opacity: 0.7 }}>
+              Click "📄 New File" or "📁 Open File" to get started
+            </div>
+            <div style={{ fontSize: '12px', opacity: 0.5 }}>
+              Use the toolbar buttons above for file operations
+            </div>
+          </EmptyState>
         )}
       </EditorWrapper>
     </EditorContainer>
